@@ -1,0 +1,83 @@
+
+:where(.otp-container,.otp-form, .input-field, header) {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+.otp-container {
+    
+    background: #fff;
+    padding: 30px;
+    border-radius: 12px;
+    box-shadow: 0 5px 10px rgba(0, 0, 0, 30%);
+    margin-top: 13%;
+    width: 20%;
+  }
+  .otp-container header {
+    height: 65px;
+    width: 65px;
+    color: #fff;
+    font-size: 2.5rem;
+    border-radius: 50%;
+  }
+
+.otp-container header img{
+    width: 60px;
+    height: auto;
+}
+
+  .otp-container h4 {
+    font-size: 1.25rem;
+    color: #333;
+    font-weight: 500;
+  }
+  .otp-form .input-field {
+    flex-direction: row;
+    column-gap: 10px;
+  }
+  .input-field input {
+    height: 45px;
+    width: 100%;
+    border-radius: 6px;
+    outline: none;
+    font-size: 1.125rem;
+    text-align: center;
+    border: 1px solid #ddd;
+  }
+  .input-field input:focus {
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1);
+  }
+  .input-field input::-webkit-inner-spin-button,
+  .input-field input::-webkit-outer-spin-button {
+    display: none;
+  }
+ .otp-form button {
+    margin-top: 25px;
+    width: 100%;
+    color: #fff;
+    font-size: 1rem;
+    border: none;
+    padding: 9px 0;
+    cursor: pointer;
+    border-radius: 6px;
+    background: #000000;
+    transition: all 0.2s ease;
+  }
+
+  .otp-form button:hover {
+    background: rgb(31, 32, 34);
+  }
+
+  @media  screen and (max-width: 767px) {
+    .otp-container {
+      margin-top: 80px;
+      width: 60%;
+    }
+    .p-otp {
+      margin-top: 15px;
+      font-size: 0.7rem;
+      color: #333;
+    }
+  }
