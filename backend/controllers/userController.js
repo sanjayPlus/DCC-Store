@@ -85,7 +85,7 @@ const protected = async (req, res) => {
 };
 const details = async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId).select('-password');
+    const user = await User.findById(req.user.userId).select('-password -otp');
     // The '-password' option excludes the 'password' field from the result
     res.status(200).json(user);
   } catch (error) {
