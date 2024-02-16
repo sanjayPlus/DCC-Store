@@ -6,9 +6,9 @@ const manifestForPlugin = {
 	registerType: "prompt",
 	includeAssets: ["favicon.ico", "apple-touch-icon.png", "masked-icon.svg"],
 	manifest: {
-		name: "INTUC Store",
-		short_name: "INTUC Store",
-		description: "INTUC Store",
+		name: "DCC Store",
+		short_name: "DCC Store",
+		description: "DCC Store",
 		icons: [
 			{
 				src: "/android-chrome-192x192.png",
