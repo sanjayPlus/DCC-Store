@@ -66,12 +66,13 @@ router.get("/checkout", userAuth, async (req, res) => {
         totalPrice +
         "/" +
         req.user.userId,
-      redirectMode: "GET",
+      redirectMode: "POST",
       mobileNumber: user.shippingAddress.phoneNumber, // corrected property name 'phone' to 'phoneNumber'
       paymentInstrument: {
         type: "PAY_PAGE",
       },
     };
+    console.log(data.redirectUrl);
     const payload = JSON.stringify(data);
     const payloadMain = Buffer.from(payload).toString("base64");
     const keyIndex = 1;
@@ -92,126 +93,138 @@ router.get("/checkout", userAuth, async (req, res) => {
         request: payloadMain,
       },
     };
-    const response = await axios(options);
+    const response = await axios.request(options);
+
     return res
       .status(200)
       .json({ url: response.data.data.instrumentResponse.redirectInfo.url });
   } catch (error) {
     console.log(error);
     res.status(500).send({
+      error:error,
       message: error.message,
       success: false,
     });
   }
 });
 
-router.post(
-  "/status/:transactionId/:merchantId/:amount/:userId",
+
+router.get(
+  '/status/:transactionId/:merchantId/:amount/:userId',
   async (req, res) => {
+    console.log(req.params);
     const merchantTransactionId = req.params.transactionId;
     const merchantId = req.params.merchantId;
     const amount = req.params.amount;
     const userId = req.params.userId;
     const user = await User.findById(userId);
+
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(404).json({ message: 'User not found' });
     }
 
     const keyIndex = 1;
     const string =
       `/pg/v1/status/${merchantId}/${merchantTransactionId}` +
       process.env.PHONEPAY_API_KEY;
-    const sha256 = crypto.createHash("sha256").update(string).digest("hex");
-    const checksum = sha256 + "###" + keyIndex;
+    const sha256 = crypto.createHash('sha256').update(string).digest('hex');
+    const checksum = sha256 + '###' + keyIndex;
 
-    const options = {
-      method: "GET",
-      url: `${process.env.PHONEPAY_API_URL}/pg/v1/status/${merchantId}/${merchantTransactionId}`,
-      headers: {
-        accept: "application/json",
-        "Content-Type": "application/json",
-        "X-VERIFY": checksum,
-        "X-MERCHANT-ID": `${merchantId}`,
-      },
+    const url = `${process.env.PHONEPAY_API_URL}/pg/v1/status/${merchantId}/${merchantTransactionId}`;
+    const headers = {
+      accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-VERIFY': checksum,
+      'X-MERCHANT-ID': `${merchantId}`,
     };
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: headers,
+      });
+      if (!response.ok) {
+        throw new Error('Network response was not ok');
+      }
+      
+      const responseData = await response.json();
+      console.log(responseData);
+      
+      if (responseData.success === true) {
+        if (responseData.data.responseCode === 'SUCCESS') {
+          const { name, email, phoneNumber } = user;
+          console.log(responseData);
+          const paymentAmount = responseData.data.amount / 100;
+          const payment = await Payment.findOne({ merchantTransactionId });
 
-    // CHECK PAYMENT TATUS
-    axios
-      .request(options)
-      .then(async (response) => {
-        if (response.data.success === true) {
-          if (response.data.data.state === "SUCCESS") {
-            const { name, email, phoneNumber } = user;
-            const paymentAmount = response.data.data.amount / 100;
-            const payment = await Payment.findOne({ merchantTransactionId });
-            if (payment) {
-              const url = `${process.env.PHONEPAY_REDIRECT_URL}/api/payment/success`;
-              return res.redirect(url);
+          if (payment) {
+            const url = `${process.env.PHONEPAY_REDIRECT_URL}/api/payment/success`;
+            return res.redirect(url);
+          }
+
+          const items = user.cart;
+          const itemIds = items.map((item) => item.productId);
+
+          const populatedItems = await Product.find({
+            _id: { $in: itemIds },
+          });
+
+          const itemsWithQuantity = items.map((item) => {
+            const correspondingProduct = populatedItems.find(
+              (product) => String(product._id) === item.productId
+            );
+
+            if (!correspondingProduct) {
+              return null; // Handle the case when the product is not found
             }
-            const items = user.cart;
-            const itemIds = items.map((item) => item.productId);
 
-            const populatedItems = await Product.find({
-              _id: { $in: itemIds },
+            return {
+              ...correspondingProduct.toObject(),
+              quantity: item.quantity,
+            };
+          });
+          const payments = await Payment.create({
+            userId,
+            merchantId,
+            merchantTransactionId,
+            amount: paymentAmount,
+            day: new Date().toLocaleDateString(),
+            body: responseData.data,
+            name,
+            email,
+            phone: phoneNumber,
+            products: itemsWithQuantity,
+            date: new Date(),
+          });
+          itemsWithQuantity.map((item) => {
+            Product.findById(item._id).then((product) => {
+              product.stocks = product.stocks - item.quantity;
+              product.save();
             });
+          });
+          user.cart = [];
+          const orders = items.map((item) => ({
+            product: item,
+            shippingAddress: user.shippingAddress,
+            date: Date.now(),
+            status: 'ordered',
+            _id: new mongoose.Types.ObjectId(),
+          }));
+          user.orders = user.orders.concat(orders);
 
-            const itemsWithQuantity = items.map((item) => {
-              const correspondingProduct = populatedItems.find(
-                (product) => String(product._id) === item.productId
-              );
+          user.payments.push({
+            paymentId: payments._id,
+            merchantId,
+            merchantTransactionId,
+            amount: paymentAmount,
+            date: new Date().toLocaleDateString(),
+          });
+          await user.save();
 
-              if (!correspondingProduct) {
-                return null; // Handle the case when the product is not found
-              }
-
-              return {
-                ...correspondingProduct.toObject(),
-                quantity: item.quantity,
-              };
-            });
-            const payments = await Payment.create({
-              userId,
-              merchantId,
-              merchantTransactionId,
-              amount: paymentAmount,
-              day: new Date().toLocaleDateString(),
-              body: response.data.data,
-              name,
-              email,
-              phone: phoneNumber,
-              products: itemsWithQuantity,
-              date: new Date(),
-            });
-            itemsWithQuantity.map((item) => {
-              Product.findById(item._id).then((product) => {
-                product.stocks = product.stocks - item.quantity;
-                product.save();
-              });
-            });
-            user.cart = [];
-            const orders = items.map((item) => ({
-              product: item,
-              shippingAddress: user.shippingAddress,
-              date: Date.now(),
-              status: "ordered",
-              _id: new mongoose.Types.ObjectId(),
-            }));
-            user.orders = user.orders.concat(orders);
-
-            user.payments.push({
-              paymentId: payments._id,
-              merchantId,
-              merchantTransactionId,
-              amount: paymentAmount,
-              date: new Date().toLocaleDateString(),
-            });
-            await user.save();
-
-            const htmlContent = sendMail(
-              email,
-              "Order Payment Successful",
-              "Order Payment Successful",
-              `<div>
+          const htmlContent = sendMail(
+            email,
+            'Order Payment Successful',
+            'Order Payment Successful',
+            `<div>
               <h1 style="text-align:center">Payment Successful</h1>
               <br>
               <p>Dear ${user.shippingAddress.name},</p>
@@ -226,36 +239,191 @@ router.post(
               
                   <br>
 
-              <p>For App Support Contact app@intucthrisssur.com </p>
+              <p>For App Support Contact app@avardbhavan.org </p>
               <br>
               <p>Sincerely,</p>
-              <p>SUNDARAN KUNNATHULLY</p>
-              <p>President,INTUC THRISSUR</p>
-              </div>`
-            );
+              <p>Team Avard</p>
+            </div>`
+          );
 
+          const redirectUrl = `${process.env.PHONEPAY_REDIRECT_URL}/api/payment/success`;
+          return res.redirect(redirectUrl);
+        } else {
+          const redirectUrl = `${process.env.PHONEPAY_REDIRECT_URL}/api/payment/failure`;
+          return res.redirect(redirectUrl);
+        }
+      } else {
+        const redirectUrl = `${process.env.PHONEPAY_REDIRECT_URL}/api/payment/failure`;
+        return res.redirect(redirectUrl);
+      }
+    } catch (error) {
+      console.error('Error during fetch:', error);
+      const redirectUrl = `${process.env.PHONEPAY_REDIRECT_URL}/api/payment/failure`;
+      return res.redirect(redirectUrl);
+    }
+  }
+);
+router.post(
+  '/status/:transactionId/:merchantId/:amount/:userId',
+  async (req, res) => {
+    console.log(req.params);
+    const merchantTransactionId = req.params.transactionId;
+    const merchantId = req.params.merchantId;
+    const amount = req.params.amount;
+    const userId = req.params.userId;
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const keyIndex = 1;
+    const string =
+      `/pg/v1/status/${merchantId}/${merchantTransactionId}` +
+      process.env.PHONEPAY_API_KEY;
+    const sha256 = crypto.createHash('sha256').update(string).digest('hex');
+    const checksum = sha256 + '###' + keyIndex;
+
+    const url = `${process.env.PHONEPAY_API_URL}/pg/v1/status/${merchantId}/${merchantTransactionId}`;
+    const headers = {
+      accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-VERIFY': checksum,
+      'X-MERCHANT-ID': `${merchantId}`,
+    };
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: headers,
+      });
+      if (!response.ok) {
+        throw new Error('Network response was not ok');
+      }
+      
+      const responseData = await response.json();
+      console.log(responseData);
+      
+      if (responseData.success === true) {
+        if (responseData.data.responseCode === 'SUCCESS') {
+          const { name, email, phoneNumber } = user;
+          console.log(responseData);
+          const paymentAmount = responseData.data.amount / 100;
+          const payment = await Payment.findOne({ merchantTransactionId });
+
+          if (payment) {
             const url = `${process.env.PHONEPAY_REDIRECT_URL}/api/payment/success`;
             return res.redirect(url);
-          } else {
-            const url = `${process.env.PHONEPAY_REDIRECT_URL}/api/payment/failure`;
-            return res.redirect(url);
           }
+
+          const items = user.cart;
+          const itemIds = items.map((item) => item.productId);
+
+          const populatedItems = await Product.find({
+            _id: { $in: itemIds },
+          });
+
+          const itemsWithQuantity = items.map((item) => {
+            const correspondingProduct = populatedItems.find(
+              (product) => String(product._id) === item.productId
+            );
+
+            if (!correspondingProduct) {
+              return null; // Handle the case when the product is not found
+            }
+
+            return {
+              ...correspondingProduct.toObject(),
+              quantity: item.quantity,
+            };
+          });
+          const payments = await Payment.create({
+            userId,
+            merchantId,
+            merchantTransactionId,
+            amount: paymentAmount,
+            day: new Date().toLocaleDateString(),
+            body: responseData.data,
+            name,
+            email,
+            phone: phoneNumber,
+            products: itemsWithQuantity,
+            date: new Date(),
+          });
+          itemsWithQuantity.map((item) => {
+            Product.findById(item._id).then((product) => {
+              product.stocks = product.stocks - item.quantity;
+              product.save();
+            });
+          });
+          user.cart = [];
+          const orders = items.map((item) => ({
+            product: item,
+            shippingAddress: user.shippingAddress,
+            date: Date.now(),
+            status: 'ordered',
+            _id: new mongoose.Types.ObjectId(),
+          }));
+          user.orders = user.orders.concat(orders);
+
+          user.payments.push({
+            paymentId: payments._id,
+            merchantId,
+            merchantTransactionId,
+            amount: paymentAmount,
+            date: new Date().toLocaleDateString(),
+          });
+          await user.save();
+
+          const htmlContent = sendMail(
+            email,
+            'Order Payment Successful',
+            'Order Payment Successful',
+            `<div>
+              <h1 style="text-align:center">Payment Successful</h1>
+              <br>
+              <p>Dear ${user.shippingAddress.name},</p>
+              <br>
+              <p>Your Order Have been Placed</p>
+              <p>Your Payment Details</p>
+              <br>
+              <p>Your transaction Id is ${merchantTransactionId}</p>
+              <p>Amount ${amount}</p>
+              <p>Email ${email}</p>
+              <p>Phone ${phoneNumber}</p>
+              
+                  <br>
+
+              <p>For App Support Contact app@avardbhavan.org </p>
+              <br>
+              <p>Sincerely,</p>
+              <p>Team Avard</p>
+            </div>`
+          );
+
+          const redirectUrl = `${process.env.PHONEPAY_REDIRECT_URL}/api/phonepe/success`;
+          return res.redirect(redirectUrl);
         } else {
-          const url = `${process.env.PHONEPAY_REDIRECT_URL}/api/payment/failure`;
-          return res.redirect(url);
+          const redirectUrl = `${process.env.PHONEPAY_REDIRECT_URL}/api/phonepe/failure`;
+          return res.redirect(redirectUrl);
         }
-      })
-      .catch((error) => {
-        console.error(error);
-      });
+      } else {
+        const redirectUrl = `${process.env.PHONEPAY_REDIRECT_URL}/api/phonepe/failure`;
+        return res.redirect(redirectUrl);
+      }
+    } catch (error) {
+      console.error('Error during fetch:', error);
+      const redirectUrl = `${process.env.PHONEPAY_REDIRECT_URL}/api/phonepe/failure`;
+      return res.redirect(redirectUrl);
+    }
   }
 );
 
 router.get("/success", (req, res) => {
-  res.redirect("https://store.intucthrissur.com/orders");
+
+res.redirect(`${process.env.DOMAIN}/orders`);
 });
 router.get("/failure", (req, res) => {
-  res.send("https://store.intucthrissur.com");
+  res.redirect(`${process.env.DOMAIN}/orders`);
 });
 router.get("/payment-details/:page/:limit", adminAuth, async (req, res) => {
   const page = parseInt(req.params.page);
