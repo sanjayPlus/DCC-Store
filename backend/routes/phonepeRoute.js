@@ -101,7 +101,7 @@ router.get("/checkout", userAuth, async (req, res) => {
   } catch (error) {
     console.log(error);
     res.status(500).send({
-      error:error,
+      error: error,
       message: error.message,
       success: false,
     });
@@ -145,10 +145,10 @@ router.get(
       if (!response.ok) {
         throw new Error('Network response was not ok');
       }
-      
+
       const responseData = await response.json();
       console.log(responseData);
-      
+
       if (responseData.success === true) {
         if (responseData.data.responseCode === 'SUCCESS') {
           const { name, email, phoneNumber } = user;
@@ -238,11 +238,10 @@ router.get(
               <p>Phone ${phoneNumber}</p>
               
                   <br>
-
-              <p>For App Support Contact app@avardbhavan.org </p>
+                  <p>Thank you for shopping with us.</p>
               <br>
               <p>Sincerely,</p>
-              <p>Team Avard</p>
+              <p>Sadhbhavana</p>
             </div>`
           );
 
@@ -299,10 +298,10 @@ router.post(
       if (!response.ok) {
         throw new Error('Network response was not ok');
       }
-      
+
       const responseData = await response.json();
       console.log(responseData);
-      
+
       if (responseData.success === true) {
         if (responseData.data.responseCode === 'SUCCESS') {
           const { name, email, phoneNumber } = user;
@@ -393,10 +392,10 @@ router.post(
               
                   <br>
 
-              <p>For App Support Contact app@avardbhavan.org </p>
+              <p>Thank you for shopping with us</p>
               <br>
               <p>Sincerely,</p>
-              <p>Team Avard</p>
+              <p>Sadhbhavana</p>
             </div>`
           );
 
@@ -420,7 +419,7 @@ router.post(
 
 router.get("/success", (req, res) => {
 
-res.redirect(`${process.env.DOMAIN}/orders`);
+  res.redirect(`${process.env.DOMAIN}/orders`);
 });
 router.get("/failure", (req, res) => {
   res.redirect(`${process.env.DOMAIN}/orders`);
