@@ -69,6 +69,14 @@ const adminRegister = async (req, res) => {
         res.status(500).json({ error: "Internal Server Error" });
     }
 }
+const getProtected = async (req, res) => {
+  try {
+      res.status(200).json({ message: "Protected data retrieved successfully" });
+  } catch (error) {
+      console.error("Error getting protected data:", error.message);
+      res.status(500).json({ error: "Internal Server Error" });
+  }
+}
 const getUser = async (req, res) => {
     const { id } = req.params.id;
     try {
@@ -301,5 +309,6 @@ module.exports = {
     updateOrderStatus,
     addCarousel,
     deleteCarousel,
-    getCarousel
+    getCarousel,
+    getProtected
 } 
